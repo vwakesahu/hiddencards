@@ -1,7 +1,16 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Lock, Unlock, Code2, Copy, Sparkles, FileText } from "lucide-react";
+import {
+  Lock,
+  Unlock,
+  Code2,
+  Copy,
+  Sparkles,
+  FileText,
+  LogOut,
+} from "lucide-react";
+import { usePrivy } from "@privy-io/react-auth";
 
 // SyntaxHighlighter component for code formatting
 const SyntaxHighlighter = ({ children }) => {
@@ -215,6 +224,7 @@ const CardGame = () => {
     suit: "spades",
   });
   const [isGenerating, setIsGenerating] = useState(false);
+  const { authenticated, login, logout } = usePrivy();
 
   const generateNewCard = () => {
     setIsGenerating(true);
@@ -288,18 +298,6 @@ function viewCard(
                     className="h-full w-16 sm:w-24 object-contain"
                   />
                 </a>
-                <div className="h-6 sm:h-8 w-px bg-slate-700/50" />
-                <a href="https://docs.inco.org/" target="_blank">
-                  <Button
-                    variant="ghost"
-                    className="flex items-center gap-1 sm:gap-2 text-slate-400 hover:text-slate-300 hover:bg-slate-800/50 px-2 sm:px-4 h-8 sm:h-10"
-                  >
-                    <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
-                    <span className="text-xs sm:text-sm font-medium">
-                      Documentation
-                    </span>
-                  </Button>
-                </a>
               </div>
 
               <div className="flex flex-col items-center gap-6 sm:gap-12">
@@ -314,39 +312,64 @@ function viewCard(
                   </div>
                 </div>
 
-                <div className="space-y-3 sm:space-y-4 w-full max-w-sm">
-                  <Button
-                    variant="default"
-                    className={`
-                      w-full h-10 sm:h-14 text-sm sm:text-lg font-medium
-                      bg-gradient-to-br from-indigo-600 to-blue-600
-                      hover:from-indigo-500 hover:to-blue-500
-                      transition-all duration-300 shadow-lg
-                      hover:shadow-indigo-500/25 disabled:opacity-70
-                      ${isGenerating ? "animate-pulse" : ""}
-                    `}
-                    onClick={generateNewCard}
-                    disabled={isGenerating}
-                  >
-                    <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                    Generate New Card
-                  </Button>
+                <div className="relative w-full max-w-sm">
+                  {authenticated ? (
+                    <>
+                      <div className="space-y-3 sm:space-y-4 w-full">
+                        <Button
+                          variant="default"
+                          className="w-full h-10 sm:h-14 text-sm sm:text-lg font-medium
+                bg-gradient-to-br from-indigo-600 to-blue-600
+                hover:from-indigo-500 hover:to-blue-500
+                transition-all duration-300 shadow-lg
+                hover:shadow-indigo-500/25 disabled:opacity-70"
+                          onClick={generateNewCard}
+                          disabled={isGenerating}
+                        >
+                          <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                          Generate New Card
+                        </Button>
 
-                  <Button
-                    variant="outline"
-                    className="
-                      w-full h-10 sm:h-14 text-sm sm:text-lg font-medium
-                      border-indigo-500/20 text-black
-                      hover:bg-indigo-500/10 hover:text-indigo-200
-                      transition-all duration-300
-                      disabled:opacity-50 disabled:hover:bg-transparent
-                    "
-                    onClick={revealCard}
-                    disabled={!isHidden}
-                  >
-                    <Unlock className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-                    Reveal Card
-                  </Button>
+                        <Button
+                          variant="outline"
+                          className="w-full h-10 sm:h-14 text-sm sm:text-lg font-medium
+                border-indigo-500/20 text-black
+                hover:bg-indigo-500/10 hover:text-indigo-200
+                transition-all duration-300
+                disabled:opacity-50 disabled:hover:bg-transparent"
+                          onClick={revealCard}
+                          disabled={!isHidden}
+                        >
+                          <Unlock className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                          Reveal Card
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full hover:bg-white/10 hover:text-white/90 text-white/50"
+                          onClick={logout}
+                        >
+                          <LogOut className="w-4 h-4 mr-2" />
+                          Logout
+                        </Button>
+                      </div>
+
+                      {/* Logout button positioned absolutely in top-right */}
+                    </>
+                  ) : (
+                    <Button
+                      variant="default"
+                      className="w-full h-10 sm:h-14 text-sm sm:text-lg font-medium
+            bg-gradient-to-br from-indigo-600 to-blue-600
+            hover:from-indigo-500 hover:to-blue-500
+            transition-all duration-300 shadow-lg
+            hover:shadow-indigo-500/25"
+                      onClick={login}
+                    >
+                      Connect Wallet
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardContent>
