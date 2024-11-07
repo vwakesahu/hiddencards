@@ -2,6 +2,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import PrivyWrapper from "@/privy/privyProvider";
 import { FHEWrapper } from "@/fhevm/fheWrapper";
+import { Toaster } from "@/components/ui/sonner";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -16,6 +17,7 @@ export default function RootLayout({ children }) {
       <body className={inter.className}>
         <PrivyWrapper>
           <FHEWrapper>{children}</FHEWrapper>
+          <Toaster />
         </PrivyWrapper>
       </body>
     </html>

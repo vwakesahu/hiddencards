@@ -11,6 +11,12 @@ import {
   LogOut,
 } from "lucide-react";
 import { usePrivy } from "@privy-io/react-auth";
+import { Contract } from "ethers";
+import { HIDDENCARDSABI, HIDDENCARDSCONTRACTADDRESS } from "@/utils/contracts";
+import { useWalletContext } from "@/privy/walletContext";
+import { useFhevm } from "@/fhevm/fhevm-context";
+import useEIP712Storage from "@/hooks/useEIP712Cache";
+import { toast } from "sonner";
 
 // SyntaxHighlighter component for code formatting
 const SyntaxHighlighter = ({ children }) => {
@@ -140,7 +146,6 @@ const CodeBlock = ({ title, code }) => {
   );
 };
 
-// PlayingCard component for the card display
 const PlayingCard = ({ value, suit, isHidden, isRevealing }) => {
   const suitSymbols = {
     hearts: "♥",
@@ -178,7 +183,7 @@ const PlayingCard = ({ value, suit, isHidden, isRevealing }) => {
               ))}
             </div>
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="relative">
+              <div className="relative animate-pulse">
                 <div className="absolute inset-0 bg-blue-400/20 blur-xl rounded-full" />
                 <Lock className="w-8 h-8 sm:w-12 sm:h-12 text-indigo-400 drop-shadow-[0_0_8px_rgba(129,140,248,0.5)]" />
               </div>
@@ -190,7 +195,7 @@ const PlayingCard = ({ value, suit, isHidden, isRevealing }) => {
   }
 
   return (
-    <div className={`relative ${cardClasses} group`}>
+    <div className={`relative ${cardClasses} group animate-fade-in`}>
       <div className="absolute -inset-4 bg-gradient-to-br from-green-500/20 via-emerald-500/10 to-teal-500/20 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
       <div className="relative w-full h-full bg-white rounded-xl shadow-2xl p-4 sm:p-6 flex flex-col justify-between transform transition-all duration-500 hover:scale-[1.02] hover:rotate-1">
         <div
@@ -215,7 +220,6 @@ const PlayingCard = ({ value, suit, isHidden, isRevealing }) => {
   );
 };
 
-// Main CardGame component
 const CardGame = () => {
   const [isHidden, setIsHidden] = useState(true);
   const [isRevealing, setIsRevealing] = useState(false);
@@ -225,40 +229,130 @@ const CardGame = () => {
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const { authenticated, login, logout } = usePrivy();
+  const { signer, address } = useWalletContext();
+  const { instance: fhevmInstance } = useFhevm();
+  const storage = useEIP712Storage(30, {
+    secureModeEnabled: false,
+  });
 
-  const generateNewCard = () => {
-    setIsGenerating(true);
-    const suits = ["hearts", "diamonds", "clubs", "spades"];
-    const values = [
-      "A",
-      "2",
-      "3",
-      "4",
-      "5",
-      "6",
-      "7",
-      "8",
-      "9",
-      "10",
-      "J",
-      "Q",
-      "K",
-    ];
-
-    setCurrentCard({
-      suit: suits[Math.floor(Math.random() * suits.length)],
-      value: values[Math.floor(Math.random() * values.length)],
-    });
-    setIsHidden(true);
-    setTimeout(() => setIsGenerating(false), 500);
+  // Card conversion utilities
+  const SUITS = ["hearts", "diamonds", "clubs", "spades"];
+  const VALUES = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+  
+  const convertNumberToCard = (number) => {
+    try {
+      const positiveNumber = Math.abs(parseInt(number));
+      const normalizedNumber = positiveNumber % 52;
+      const suitIndex = Math.floor(normalizedNumber / VALUES.length);
+      const valueIndex = normalizedNumber % VALUES.length;
+      
+      return {
+        suit: SUITS[suitIndex],
+        value: VALUES[valueIndex]
+      };
+    } catch (error) {
+      console.error('Error converting number to card:', error);
+      return { suit: "spades", value: "2" }; // fallback default
+    }
   };
 
-  const revealCard = () => {
+  const generateNewCard = async () => {
+    setIsGenerating(true);
+    try {
+      const hiddenCardsContract = new Contract(
+        HIDDENCARDSCONTRACTADDRESS,
+        HIDDENCARDSABI,
+        signer
+      );
+
+      const res = await hiddenCardsContract.getCard();
+      const tx = await res.getTransaction();
+      await tx.wait();
+      setIsHidden(true);
+      
+      toast.success('Your card has been generated and encrypted.')
+    } catch (error) {
+      console.error('Error generating card:', error);
+      toast.error('There was an error generating your card. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const revealCard = async () => {
     setIsRevealing(true);
-    setTimeout(() => {
+    try {
+      let signature, publicKey, privateKey;
+      const cachedData = storage.getAddressData(address);
+
+      if (cachedData?.keys) {
+        ({ signature, publicKey, privateKey } = cachedData.keys);
+      } else {
+        const keyPair = fhevmInstance.generateKeypair();
+        publicKey = keyPair.publicKey;
+        privateKey = keyPair.privateKey;
+
+        const eip712 = fhevmInstance.createEIP712(
+          publicKey,
+          HIDDENCARDSCONTRACTADDRESS
+        );
+
+        signature = await signer._signTypedData(
+          eip712.domain,
+          { Reencrypt: eip712.types.Reencrypt },
+          eip712.message
+        );
+
+        storage.storeUserKeys(
+          address,
+          { publicKey, privateKey, signature },
+          {
+            lastFetchTime: Date.now(),
+            contractAddress: HIDDENCARDSCONTRACTADDRESS,
+          }
+        );
+      }
+
+      const encrypted = new Contract(
+        HIDDENCARDSCONTRACTADDRESS,
+        HIDDENCARDSABI,
+        signer
+      );
+
+      const balanceHandle = await encrypted.viewCard();
+
+      if (balanceHandle.toString() === "0") {
+        throw new Error("Invalid card value received");
+      }
+
+      const balanceResult = await fhevmInstance.reencrypt(
+        balanceHandle,
+        privateKey,
+        publicKey,
+        signature.replace("0x", ""),
+        HIDDENCARDSCONTRACTADDRESS,
+        address
+      );
+
+      // Convert the balance result to a card
+      const newCard = convertNumberToCard(balanceResult.toString());
+      setCurrentCard(newCard);
       setIsHidden(false);
+
+      storage.updateAddressData(address, {
+        lastFetchTime: Date.now(),
+        lastBalance: balanceResult.toString(),
+      });
+
+      toast.success(`You drew the ${newCard.value} of ${newCard.suit}!`);
+    } catch (err) {
+      console.error('Error revealing card:', err);
+      toast.error('There was an error revealing your card. Please try again.');
+      storage.removeUserKeys(address);
+      setIsHidden(true);
+    } finally {
       setIsRevealing(false);
-    }, 500);
+    }
   };
 
   const codeExamples = {
