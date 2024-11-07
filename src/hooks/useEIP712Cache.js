@@ -13,6 +13,14 @@ const safeJSONParse = (str, fallback = null) => {
   }
 };
 
+// Utility to safely access localStorage
+const getLocalStorage = () => {
+  if (typeof window !== 'undefined') {
+    return window.localStorage;
+  }
+  return null;
+};
+
 const useEIP712Storage = (timeoutMinutes = 30, options = {}) => {
   const {
     secureModeEnabled = true,
@@ -22,31 +30,40 @@ const useEIP712Storage = (timeoutMinutes = 30, options = {}) => {
   // Use a ref to track component mounting state
   const isMounted = useRef(true);
 
-  // Initialize state with keys data from localStorage
-  const [userKeyMap, setUserKeyMap] = useState(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return {};
+  // Initialize state with empty objects
+  const [userKeyMap, setUserKeyMap] = useState({});
+  const [addressDataMap, setAddressDataMap] = useState({});
+  
+  // Load data from localStorage after component mount
+  useEffect(() => {
+    const storage = getLocalStorage();
+    if (!storage) return;
 
-    const parsed = safeJSONParse(stored, {});
-    const now = Date.now();
+    // Load and filter user keys
+    const storedKeys = storage.getItem(STORAGE_KEY);
+    if (storedKeys) {
+      const parsed = safeJSONParse(storedKeys, {});
+      const now = Date.now();
 
-    // Filter out expired entries during initialization
-    const filtered = Object.entries(parsed).reduce((acc, [address, data]) => {
-      const expirationTime = data.timestamp + (timeoutMinutes * 60 * 1000);
-      if (now <= expirationTime) {
-        acc[address] = data;
-      }
-      return acc;
-    }, {});
+      // Filter out expired entries
+      const filtered = Object.entries(parsed).reduce((acc, [address, data]) => {
+        const expirationTime = data.timestamp + (timeoutMinutes * 60 * 1000);
+        if (now <= expirationTime) {
+          acc[address] = data;
+        }
+        return acc;
+      }, {});
 
-    return filtered;
-  });
+      setUserKeyMap(filtered);
+    }
 
-  // Initialize state with additional address data from localStorage
-  const [addressDataMap, setAddressDataMap] = useState(() => {
-    const stored = localStorage.getItem(ADDRESS_DATA_KEY);
-    return safeJSONParse(stored, {});
-  });
+    // Load address data
+    const storedAddressData = storage.getItem(ADDRESS_DATA_KEY);
+    if (storedAddressData) {
+      const parsed = safeJSONParse(storedAddressData, {});
+      setAddressDataMap(parsed);
+    }
+  }, [timeoutMinutes]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -56,7 +73,7 @@ const useEIP712Storage = (timeoutMinutes = 30, options = {}) => {
         clearAllKeys();
       }
     };
-  }, []);
+  }, [secureModeEnabled]);
 
   // Set up expiration timer for all entries
   useEffect(() => {
@@ -78,16 +95,22 @@ const useEIP712Storage = (timeoutMinutes = 30, options = {}) => {
 
   // Persist to localStorage whenever the maps change
   useEffect(() => {
+    const storage = getLocalStorage();
+    if (!storage) return;
+
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(userKeyMap));
+      storage.setItem(STORAGE_KEY, JSON.stringify(userKeyMap));
     } catch (error) {
       console.error('Error writing keys to localStorage:', error);
     }
   }, [userKeyMap]);
 
   useEffect(() => {
+    const storage = getLocalStorage();
+    if (!storage) return;
+
     try {
-      localStorage.setItem(ADDRESS_DATA_KEY, JSON.stringify(addressDataMap));
+      storage.setItem(ADDRESS_DATA_KEY, JSON.stringify(addressDataMap));
     } catch (error) {
       console.error('Error writing address data to localStorage:', error);
     }
@@ -218,9 +241,12 @@ const useEIP712Storage = (timeoutMinutes = 30, options = {}) => {
   const clearAllKeys = useCallback(() => {
     setUserKeyMap({});
     setAddressDataMap({});
+    const storage = getLocalStorage();
+    if (!storage) return;
+
     try {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(ADDRESS_DATA_KEY);
+      storage.removeItem(STORAGE_KEY);
+      storage.removeItem(ADDRESS_DATA_KEY);
     } catch (error) {
       console.error('Error removing from localStorage:', error);
     }
